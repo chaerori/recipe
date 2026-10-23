@@ -1,7 +1,9 @@
 {
   "name": "오늘의 레시피",
   "short_name": "오늘의 레시피",
-  "start_url": "/",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#f1f5f3",
   "theme_color": "#0f8f5f",
