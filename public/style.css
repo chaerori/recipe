@@ -175,3 +175,12 @@ select { -webkit-appearance: none; appearance: none; padding-right: 36px;
 .search { position: relative; margin: 2px 0 12px; }
 .search svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); width: 20px; height: 20px; fill: none; stroke: var(--muted); stroke-width: 1.8; stroke-linecap: round; pointer-events: none; }
 .search input { width: 100%; padding-left: 42px; background: var(--card); border-radius: 99px; -webkit-appearance: none; appearance: none; }
+
+/* 로그인 화면: 본문과 메뉴를 숨깁니다 */
+body.locked main, body.locked nav { display: none; }
+#loginView { max-width: 380px; margin: 0 auto; padding: 8vh 16px 0; }
+
+/* 검색줄 + 내 레시피 추가 버튼 */
+.searchrow { display: flex; gap: 8px; align-items: center; margin: 2px 0 12px; }
+.searchrow .search { flex: 1; margin: 0; min-width: 0; }
+.searchrow .btn { flex: none; border-radius: 99px; min-height: 46px; padding: 0 14px; font-size: 14px; }

@@ -3,3 +3,4 @@ data.db
 data.db-*
 server.log
 .DS_Store
+public/data/

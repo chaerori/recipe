@@ -1,8 +1,11 @@
 {
   "name": "recipe-suggester",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
-  "scripts": { "start": "node --no-warnings server.js" },
-  "dependencies": { "express": "^4.21.0" }
+  "scripts": {
+    "start": "node tools/dev.mjs",
+    "crawl": "node tools/crawl.mjs",
+    "upload": "node tools/upload-recipes.mjs"
+  }
 }

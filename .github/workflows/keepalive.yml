@@ -1,0 +1,18 @@
+# Supabase 무료 프로젝트는 일정 기간 접속이 없으면 일시 정지됩니다. 주 2회 가볍게 접속해 정지를 막습니다.
+# 저장소 변수(Settings > Secrets and variables > Actions > Variables)에 SUPABASE_URL, SUPABASE_ANON_KEY 를 넣으면 동작합니다.
+name: Supabase 유지
+
+on:
+  schedule:
+    - cron: '17 3 * * 1,4'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    if: ${{ vars.SUPABASE_URL != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: 접속
+        run: |
+          curl -fsS "${{ vars.SUPABASE_URL }}/rest/v1/staples?select=id&limit=1" \
+            -H "apikey: ${{ vars.SUPABASE_ANON_KEY }}" -o /dev/null -w "HTTP %{http_code}\n"

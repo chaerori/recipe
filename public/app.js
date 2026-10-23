@@ -1,11 +1,8 @@
+import { api } from './js/api.js';
+import { store, isRemote } from './js/store.js';
+
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const api = async (url, method = 'GET', body) => {
-  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
-  const j = await r.json();
-  if (!r.ok) throw new Error(j.error || '요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요');
-  return j;
-};
 let toastTimer;
 // undo를 넘기면 "실행 취소" 버튼이 함께 잠깐 보입니다.
 const toast = (m, undo) => {
@@ -148,12 +145,14 @@ async function renderSuggest() {
   const total = Object.values(stats.byCategory).reduce((a, b) => a + b, 0);
   const all = ['전체', ...cats];
   $('#suggest').innerHTML = `
-    <div class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg>
+    <div class="searchrow"><div class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg>
       <input id="q" type="search" value="${esc(sel.q)}" placeholder="요리나 재료로 검색" aria-label="요리 검색" enterkeyhint="search" autocomplete="off"></div>
+      <button class="btn sm" id="addMine">+ 내 레시피</button></div>
     <div class="cats">${all.map((c) => `<button data-cat="${c}" class="${sel.category === c ? 'on' : ''}">${c}
       <small>${c === '전체' ? total : stats.byCategory[c] || 0}개</small></button>`).join('')}</div>
     <div id="results"></div>`;
-  if (!total) { $('#results').innerHTML = '<div class="empty">저장된 레시피가 없어요.<br>설정에서 레시피를 먼저 가져와 주세요.</div>'; return; }
+  $('#addMine').onclick = () => openMineForm();
+  if (!total) { $('#results').innerHTML = '<div class="empty">아직 레시피가 없어요.<br>“+ 내 레시피”로 직접 적거나, 만개의레시피 레시피를 올려 주세요.</div>'; return; }
   let t;
   $('#q').oninput = (e) => { sel.q = e.target.value; clearTimeout(t); t = setTimeout(guard(loadResults), 250); };
   $('#suggest .cats').onclick = guard(async (e) => {
@@ -173,7 +172,7 @@ async function loadResults() {
       <select id="sv"><option value="">인분 무관</option>${[1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}" ${sel.servings == n ? 'selected' : ''}>${n}인분 안팎</option>`).join('')}</select>
       <select id="mt"><option value="">시간 무관</option>${[15, 30, 60, 90].map((n) => `<option value="${n}" ${sel.maxMinutes == n ? 'selected' : ''}>${n}분 이내</option>`).join('')}</select></div>
     <p class="summary">바로 만들 수 있는 요리 <b>${ready}개</b> · 전체 ${list.length}개</p>
-    <div class="recipes">${list.length ? list.map(recipeCard).join('') : `<div class="empty" style="grid-column:1/-1">${sel.q.trim() ? `“${esc(sel.q.trim())}”에 맞는 레시피가 없어요.<br>다른 단어로 검색하거나 종류를 “전체”로 바꿔 보세요.` : '조건에 맞는 레시피가 없어요.<br>냉장고에 재료를 더 추가하거나 필터를 넓혀 보세요.'}</div>`}</div>`;
+    <div class="recipes">${list.length ? list.map(recipeCard).join('') : `<div class="empty" style="grid-column:1/-1">${sel.category === '내 레시피' && !sel.q.trim() ? '아직 내 레시피가 없어요.<br>오른쪽 위의 “+ 내 레시피”로 첫 레시피를 적어 보세요.' : sel.q.trim() ? `“${esc(sel.q.trim())}”에 맞는 레시피가 없어요.<br>다른 단어로 검색하거나 종류를 “전체”로 바꿔 보세요.` : '조건에 맞는 레시피가 없어요.<br>냉장고에 재료를 더 추가하거나 필터를 넓혀 보세요.'}</div>`}</div>`;
   $('#mm').onchange = guard(async (e) => { sel.maxMissing = Number(e.target.value); await loadResults(); });
   $('#sv').onchange = guard(async (e) => { sel.servings = e.target.value; await loadResults(); });
   $('#mt').onchange = guard(async (e) => { sel.maxMinutes = e.target.value; await loadResults(); });
@@ -185,7 +184,7 @@ const recipeCard = (r) => `
     ${r.image ? `<img src="${esc(r.image)}" loading="lazy" referrerpolicy="no-referrer" alt="">` : ''}
     <div class="body">
       <h3>${esc(r.title)}</h3>
-      <div class="muted">★ ${r.rating} (${r.reviewCount}) ${r.time ? '· ' + esc(r.time) : ''} ${r.cookCount ? `· 🍽 ${r.cookCount}회` : ''}</div>
+      <div class="muted">${r.mine ? '내 레시피' : `★ ${r.rating} (${r.reviewCount})`} ${r.time ? '· ' + esc(r.time) : ''} ${r.cookCount ? `· 🍽 ${r.cookCount}회` : ''}</div>
       <div class="meter ${r.missing.length === 0 ? 'full' : 'part'}"><i style="width:${Math.round(r.coverage * 100)}%"></i></div>
       <div class="meterlabel">
         <span>${r.missing.length === 0 ? '지금 바로 만들 수 있어요' : `재료 ${r.have.length}/${r.have.length + r.missing.length}개 보유`}</span>
@@ -200,15 +199,24 @@ async function openRecipe(id) {
   openModal(`
     ${r.image ? `<img class="hero" src="${esc(r.image)}" referrerpolicy="no-referrer" alt="">` : ''}
     <h2>${esc(r.title)}</h2>
-    <p class="muted">★ ${r.rating} (${r.review_count}) ${r.time ? '· ' + esc(r.time) : ''} ${r.servings ? '· ' + esc(r.servings) : ''} ·
-      <a href="${r.url}" target="_blank" rel="noopener">만개의레시피 원문</a></p>
-    <p>${esc(r.description)}</p>
+    <p class="muted">${r.mine ? '내 레시피' : `★ ${r.rating} (${r.review_count})`} ${r.time ? '· ' + esc(r.time) : ''} ${r.servings ? '· ' + esc(r.servings) : ''}</p>
     <h3>재료</h3>
     <div>${r.items.map((i) => `<span class="pill ${i.status === 'miss' ? 'miss' : i.status === 'have' ? 'have' : ''}">${esc(i.text)}</span>`).join('')}
     <p class="muted">초록은 보유, 빨강은 부족, 회색은 기본 재료예요.</p></div>
-    <h3>조리 순서</h3>
-    ${r.steps.length ? `<ol class="steps">${r.steps.map((s) => `<li>${esc(s.text)}</li>`).join('')}</ol>` : '<p class="muted">조리 순서는 원문 링크에서 확인해 주세요.</p>'}
-    `, `${r.missing.length ? `<button class="btn" id="toShop">부족한 재료 담기 (${r.missing.length})</button>` : ''}<button class="btn primary" id="cooked">만들었어요</button>`);
+    ${r.description ? `<p>${esc(r.description)}</p>` : ''}
+    <h3>조리 방법</h3>
+    ${r.steps.length ? `<ol class="steps">${r.steps.map((s) => `<li>${esc(s.text)}</li>`).join('')}</ol>`
+      : `<p class="muted" style="margin-top:0">${r.mine ? '조리 순서를 적어 두지 않았어요.' : '조리 순서는 만개의레시피 원문에서 볼 수 있어요.'}</p>`}
+    ${r.url ? `<a class="btn" href="${esc(r.url)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center">${r.steps.length || r.mine ? '원문 보기' : '원문에서 조리 방법 보기'}</a>` : ''}
+    `, `${r.missing.length ? `<button class="btn" id="toShop">부족한 재료 담기 (${r.missing.length})</button>` : ''}${r.mine ? '<button class="btn" id="editMine">수정</button><button class="btn" id="delMine">삭제</button>' : ''}<button class="btn primary" id="cooked">만들었어요</button>`);
+  if (r.mine) {
+    $('#editMine').onclick = () => openMineForm(-r.id);
+    $('#delMine').onclick = guard(async () => {
+      const saved = await api('/api/my-recipes/' + -r.id);
+      await api('/api/my-recipes/' + -r.id, 'DELETE'); $('#modal').close(); renderSuggest();
+      toast(`${r.title} 삭제했어요`, async () => { await api('/api/my-recipes', 'POST', saved); renderSuggest(); });
+    });
+  }
   if (r.missing.length) $('#toShop').onclick = guard(async () => { await api('/api/shopping', 'POST', { names: r.missing });
     const b = $('#toShop'); b.textContent = `✓ ${r.missing.length}개 담았어요`; b.disabled = true;
     toast('장보기 목록에 담았어요'); });
@@ -228,13 +236,40 @@ function openCooked(r) {
   });
 }
 
+// ---------- 내 레시피 ----------
+async function openMineForm(id) {
+  const cats = (await api('/api/categories')).filter((c) => c !== '내 레시피');
+  const r = id ? await api('/api/my-recipes/' + id) : { category: '메인요리', ingredients: [], steps: [] };
+  openModal(`<h2 style="margin-top:0">${id ? '내 레시피 수정' : '내 레시피 추가'}</h2>
+    <form id="mineForm" style="display:grid;gap:10px">
+      <input name="title" value="${esc(r.title || '')}" placeholder="요리 이름" required aria-label="요리 이름">
+      <div class="row" style="flex-wrap:nowrap">
+        <select name="category" class="grow" aria-label="종류">${cats.map((c) => `<option ${c === r.category ? 'selected' : ''}>${c}</option>`).join('')}</select>
+        <input name="minutes" type="number" inputmode="numeric" min="0" value="${esc(r.minutes || '')}" placeholder="분" aria-label="조리 시간(분)" style="width:84px">
+        <input name="servingsNum" type="number" inputmode="numeric" min="0" value="${esc(r.servingsNum || '')}" placeholder="인분" aria-label="인분" style="width:84px">
+      </div>
+      <textarea name="ingredients" rows="5" placeholder="재료 (한 줄에 하나씩)&#10;양파 1개&#10;대파 1대" required aria-label="재료">${esc((r.ingredients || []).join('\n'))}</textarea>
+      <textarea name="steps" rows="6" placeholder="조리 순서 (한 줄에 한 단계씩)" aria-label="조리 순서">${esc((r.steps || []).map((s) => s.text ?? s).join('\n'))}</textarea>
+      <textarea name="description" rows="2" placeholder="메모 (선택)" aria-label="메모">${esc(r.description || '')}</textarea>
+      <input name="source_url" type="url" value="${esc(r.source_url || '')}" placeholder="참고한 주소 (선택)" aria-label="참고한 주소">
+    </form>`, '<button class="btn primary" form="mineForm">저장</button>');
+  $('#mineForm').onsubmit = guard(async (e) => {
+    e.preventDefault();
+    const f = new FormData(e.target), split = (v) => String(v).split('\n');
+    const body = { title: f.get('title'), category: f.get('category'), minutes: f.get('minutes'), servingsNum: f.get('servingsNum'),
+      ingredients: split(f.get('ingredients')), steps: split(f.get('steps')), description: f.get('description'), source_url: f.get('source_url') };
+    if (id) await api('/api/my-recipes/' + id, 'PUT', body); else await api('/api/my-recipes', 'POST', body);
+    $('#modal').close(); toast('저장했어요'); renderSuggest();
+  });
+}
+
 // ---------- 요리 기록 ----------
 async function renderLog() {
   const { stats, history } = await api('/api/cook-log');
   $('#log').innerHTML = !stats.length ? '<div class="empty">아직 기록한 요리가 없어요.<br>추천 탭에서 레시피를 열고 “만들었어요”를 눌러 보세요.</div>' : `
     <h2 style="margin-top:4px">많이 만든 요리</h2>
     <div class="list">${stats.map((s) => `<div class="card item tap" data-id="${s.id}">
-      <div class="grow"><span class="name">${esc(s.title)}</span><div class="muted">마지막 ${s.last.slice(0, 10)} · ★ ${s.rating}</div></div>
+      <div class="grow"><span class="name">${esc(s.title)}</span><div class="muted">마지막 ${s.last.slice(0, 10)}${s.mine ? ' · 내 레시피' : ` · ★ ${s.rating}`}</div></div>
       <span class="badge">${s.count}회</span></div>`).join('')}</div>
     <h2>최근 기록</h2>
     <div class="list">${history.map((h) => `<div class="card item"><div class="grow"><b>${esc(h.title)}</b>
@@ -275,21 +310,13 @@ async function renderShop() {
 }
 
 // ---------- 설정 ----------
-let poll;
 async function renderSettings() {
-  const [cats, staples, stats, avoid] = await Promise.all([api('/api/categories'), api('/api/staples'), api('/api/recipes/stats'), api('/api/avoid')]);
+  const [staples, avoid] = await Promise.all([api('/api/staples'), api('/api/avoid')]);
   $('#settings').innerHTML = `
-    <h2 style="margin-top:4px">레시피 가져오기</h2>
+    <h2 style="margin-top:4px">내 데이터</h2>
     <div class="card">
-      <p class="muted">만개의레시피에서 별점 ${stats.minRating} 이상인 요리만 가져와요. 사이트에 부담을 주지 않도록 천천히 가져와서 시간이 걸려요. 개인 용도로만 사용해 주세요.</p>
-      <div class="row" style="gap:4px 16px">${cats.map((c) => `<label class="chk"><input type="checkbox" name="c" value="${c}" checked> ${c} <span class="muted">(${stats.byCategory[c] || 0})</span></label>`).join('')}</div>
-      <div class="row" style="margin-top:10px">
-        <label class="grow muted">종류별 페이지 수<input id="pages" type="number" inputmode="numeric" min="1" max="10" value="2" style="width:100%;display:block"></label>
-        <label class="grow muted">최소 후기 수<input id="minRev" type="number" inputmode="numeric" min="0" value="3" style="width:100%;display:block"></label>
-      </div>
-      <div class="row" style="margin-top:10px"><button class="btn primary grow" id="startCrawl">가져오기 시작</button><button class="btn" id="stopCrawl">중지</button>
-      </div>
-      <p id="crawlMsg" class="muted"></p>
+      <p class="muted" style="margin-top:0">${isRemote ? '냉장고, 요리 기록, 장보기는 계정에 저장돼요. 어느 기기에서든 같은 비밀번호로 볼 수 있어요.' : '지금은 이 브라우저에만 저장돼요. 다른 기기와 함께 쓰려면 Supabase를 연결해 주세요.'}</p>
+      ${isRemote ? '<button class="btn" id="logout">로그아웃</button>' : ''}
     </div>
     <h2>못 먹는 재료</h2>
     <p class="muted">이 재료가 들어간 레시피는 추천에서 빼요. 알레르기나 싫어하는 재료를 등록해 두세요.</p>
@@ -300,28 +327,11 @@ async function renderSettings() {
     <div class="row" id="staples">${staples.map((s) => `<span class="pill">${esc(s)} <button class="link" data-s="${esc(s)}">×</button></span>`).join('')}</div>
     <form id="stapleForm" class="row" style="margin-top:10px"><input name="name" placeholder="예: 매실청" required><button class="btn">추가</button></form>`;
 
-  $('#startCrawl').onclick = guard(async () => {
-    const categories = [...document.querySelectorAll('input[name=c]:checked')].map((c) => c.value);
-    await api('/api/crawl', 'POST', { categories, pages: $('#pages').value, minReviews: $('#minRev').value });
-    pollCrawl();
-  });
-  $('#stopCrawl').onclick = guard(() => api('/api/crawl/stop', 'POST'));
+  $('#logout')?.addEventListener('click', guard(async () => { await store.logout(); showLogin(); }));
   $('#avoidForm').onsubmit = guard(async (e) => { e.preventDefault(); await api('/api/avoid', 'POST', { name: new FormData(e.target).get('name') }); renderSettings(); });
   $('#avoid').onclick = guard(async (e) => { if (e.target.dataset.a) { await api('/api/avoid/' + encodeURIComponent(e.target.dataset.a), 'DELETE'); renderSettings(); } });
   $('#stapleForm').onsubmit = guard(async (e) => { e.preventDefault(); await api('/api/staples', 'POST', { name: new FormData(e.target).get('name') }); renderSettings(); });
   $('#staples').onclick = guard(async (e) => { if (e.target.dataset.s) { await api('/api/staples/' + encodeURIComponent(e.target.dataset.s), 'DELETE'); renderSettings(); } });
-  pollCrawl();
-}
-
-function pollCrawl() {
-  clearInterval(poll);
-  const tick = async () => {
-    const msg = $('#crawlMsg'); if (!msg) return clearInterval(poll);
-    const s = await api('/api/crawl/status');
-    msg.textContent = `${s.running ? '⏳ ' : ''}${s.message} · ${s.saved}개 저장 · 실패 ${s.errors}건`;
-    if (!s.running) clearInterval(poll);
-  };
-  tick(); poll = setInterval(tick, 1500);
 }
 
 function openModal(html, actions = '') {
@@ -332,4 +342,22 @@ function openModal(html, actions = '') {
   if (!m.open) m.showModal();
 }
 
-show('fridge');
+// ---------- 로그인 (Supabase 모드에서만) ----------
+function showLogin() {
+  document.body.classList.add('locked');
+  $('#loginView').hidden = false;
+  $('#loginView').innerHTML = `<form id="loginForm" class="card" style="display:grid;gap:10px">
+    <h2 style="margin:0">비밀번호를 입력해 주세요</h2>
+    <input type="password" name="password" placeholder="비밀번호" autocomplete="current-password" aria-label="비밀번호" required>
+    <p id="loginErr" class="muted" style="margin:0;color:var(--bad)" role="alert"></p>
+    <button class="btn primary">들어가기</button></form>`;
+  $('#loginForm').onsubmit = async (e) => {
+    e.preventDefault();
+    try { await store.login(new FormData(e.target).get('password')); } catch (err) { $('#loginErr').textContent = err.message; return; }
+    $('#loginView').hidden = true; document.body.classList.remove('locked'); show('fridge');
+  };
+  $('#loginForm input').focus();
+}
+window.addEventListener('auth-required', showLogin);
+
+if (isRemote && !(await store.session())) showLogin(); else show('fridge');
