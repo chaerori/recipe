@@ -41,7 +41,15 @@ async function remoteStore() {
     async session() { return !!(await sb.auth.getSession()).data.session; },
     async login(password) {
       const { error } = await sb.auth.signInWithPassword({ email: CONFIG.ACCOUNT_EMAIL, password });
-      if (error) throw new Error('비밀번호가 맞지 않아요');
+      if (error) {
+        // 실패 이유를 구분해서 알려 줍니다. (계정을 다시 만들었을 때 원인을 찾기 쉽게)
+        const code = error.code || '';
+        throw new Error(
+          code === 'email_not_confirmed' ? '이메일 인증이 안 된 계정이에요. Supabase에서 이 계정을 Auto Confirm 으로 다시 만들어 주세요'
+          : code === 'invalid_credentials' ? '비밀번호가 맞지 않거나 계정이 없어요'
+          : error.status === 429 || /rate/i.test(code) ? '시도가 너무 많아요. 잠시 뒤에 다시 해 주세요'
+          : `로그인하지 못했어요 (${error.message})`);
+      }
     },
     async logout() { await sb.auth.signOut(); },
     async recipes() { // 1000개 단위로 나눠 읽어 목록이 늘어나도 잘리지 않게 합니다.
